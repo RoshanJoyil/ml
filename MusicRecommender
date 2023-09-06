@@ -1,0 +1,862 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/RoshanJoyil/ml/blob/master/MusicRecommender\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "ns5fGPq-SMhQ"
+      },
+      "source": [
+        "<font color=\"#de3023\"><h1><b>REMINDER MAKE A COPY OF THIS NOTEBOOK, DO NOT EDIT</b></h1></font>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "GDKQs8t8cScx"
+      },
+      "source": [
+        "# Part 3: Spotify hit prediction round 2!\n",
+        "\n",
+        "## Audio features\n",
+        "\n",
+        "![Spotify logo](https://drive.google.com/uc?id=1WsaRSK8pVfoEzI0BwZQcXCzhXBfQbI8m)\n",
+        "\n",
+        "In this notebook, we'll be building a hit prediction system for the dataset we've been working with; this time, however, we'll be going beyond the metadata and look at the **raw audio** instead!"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "rWibtg0cb1tJ"
+      },
+      "source": [
+        "#@title Run this to download data and prepare the environment. (Restart runtime and rerun cell in case of an error) { display-mode: \"form\" }\n",
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "import matplotlib.pyplot as plt\n",
+        "import seaborn as sns\n",
+        "import os\n",
+        "# import gdown\n",
+        "import sys\n",
+        "\n",
+        "# new dependencies\n",
+        "!pip --disable-pip-version-check install requests==2.27.1\n",
+        "!pip --disable-pip-version-check install urllib3\n",
+        "!pip --disable-pip-version-check install spotipy --upgrade\n",
+        "!pip --disable-pip-version-check  install traces\n",
+        "\n",
+        "import spotipy\n",
+        "import requests\n",
+        "from spotipy.oauth2 import SpotifyClientCredentials\n",
+        "import traces\n",
+        "\n",
+        "# do not change these codes\n",
+        "client_credentials_manager = SpotifyClientCredentials('e316c18604cb42399f3b679791362112','4bd95a0d37d145998cfdcaf2a68579d7')\n",
+        "sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)\n",
+        "\n",
+        "# machine learning models\n",
+        "from sklearn.decomposition import PCA\n",
+        "from sklearn.linear_model import LogisticRegression\n",
+        "from sklearn.naive_bayes import GaussianNB\n",
+        "from sklearn.svm import SVC\n",
+        "from sklearn.neighbors import KNeighborsClassifier\n",
+        "from sklearn.neural_network import MLPClassifier\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "\n",
+        "#warning supression\n",
+        "from warnings import simplefilter\n",
+        "simplefilter(action=\"ignore\", category=pd.errors.PerformanceWarning)\n",
+        "\n",
+        "\n",
+        "# audio analysis\n",
+        "import librosa\n",
+        "import librosa.display\n",
+        "!pip install audio2numpy\n",
+        "!apt-get install ffmpeg\n",
+        "import audio2numpy\n",
+        "import IPython.display as ipd\n",
+        "\n",
+        "# helper function to plot a timbre timecourse\n",
+        "def plot_timbre(df, song_id, timbre_col):\n",
+        "    col = f'timbre_{timbre_col}'\n",
+        "    plt.figure()\n",
+        "    plt.plot([i*.5 for i in range(len(df[col][song_id]))], df[col][song_id])\n",
+        "    plt.xlabel('time/seconds')\n",
+        "    plt.ylabel('timbre component weight')\n",
+        "\n",
+        "# timbre timecourses\n",
+        "# data_url = 'https://drive.google.com/uc?id=1jwG1B98Uq5phurfGmdZg8w2BCJdth6Io'\n",
+        "!wget -O ./spotify_data_timbre.csv = 'https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20Music%20Recommendation/spotify_data_timbre.csv'\n",
+        "data_path = './spotify_data_timbre.csv'\n",
+        "# gdown.download(data_url, data_path , True)\n",
+        "\n",
+        "# chirp file\n",
+        "# chirp_url = 'https://drive.google.com/uc?id=1iX6wV0cSGIVM0nTItTSUlUehhKCILymB'\n",
+        "!wget -O ./chirp.csv = 'https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20Music%20Recommendation/chirp.wav'\n",
+        "chirp_path = './chirp.wav'\n",
+        "# gdown.download(chirp_url, chirp_path , True)\n",
+        "\n",
+        "# two wav files\n",
+        "# wav1_url = 'https://drive.google.com/uc?id=14qA48pPVJKU4KlP8YwqTpDo7WEewjXwf'\n",
+        "!wget -O ./wav1_path.csv = 'https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20Music%20Recommendation/track_3504.wav'\n",
+        "wav1_path = './sample1.wav'\n",
+        "# gdown.download(wav1_url, wav1_path , True)\n",
+        "\n",
+        "# wav2_url = 'https://drive.google.com/uc?id=12XIWhMCAiabzGqXQhN2wB9o5p6MFR4Y0'\n",
+        "!wget -O ./wav2_path.csv = 'https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20Music%20Recommendation/track_3642.wav'\n",
+        "wav2_path = './sample2.wav'\n",
+        "# gdown.download(wav2_url, wav2_path , True)\n",
+        "\n",
+        "# Check that the data downloaded by running this cell! It'll have more columns than usual.\n",
+        "data = pd.read_csv(data_path)\n",
+        "data.rename(columns={'Unnamed: 0':'orig_index'},inplace=True)\n",
+        "data.drop(columns=['index'],inplace=True)"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "JuUV7zw4jZA3"
+      },
+      "source": [
+        "## Outline of notebook\n",
+        "Here's what we're going to cover today:\n",
+        "1. Explore some more audio information from Spotify.\n",
+        "2. Machine learning on the timbre timecourses\n",
+        "3. Recurrent Neural Networks (RNNs)\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "2NQoKutZEBRq"
+      },
+      "source": [
+        "## More audio information\n",
+        "In previous notebooks, we've been considering some pretty abstract features of the songs we're working with, such as **danceability** and **instrumentalness**. While these properties are interesting for sure, they are just single values, so they don't tell you how the music is **changing** over time. For example, a song may be pretty high on the danceability scale, but the beat might only come in part way through after a slower intro.\n",
+        "\n",
+        "To get a better feel of our new representation of music, let's take a look at a demo! [Click here to check it out!](https://musiclab.chromeexperiments.com/spectrogram/)\n",
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "7Abhh-XVEgdY",
+        "cellView": "form"
+      },
+      "source": [
+        "#@title What other things might the features we've been looking at **not** capture?\n",
+        "your_answer = ''  #@param {type:\"string\"}\n",
+        "print(your_answer)"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "lYKg9zHoFxAs"
+      },
+      "source": [
+        "Luckily for us, Spotify has done the hard work and given us twelve **timbre components** which are derived using machine learning from a huge number of audio files. These can be accessed using Spotipy.\n",
+        "\n",
+        "For reference, the **timbre** of a sound is its specific quality or characteristic beyond its pitch or pitches.\n",
+        "\n",
+        "Here are a couple of videos that explain and demonstrate timbre in a bit more detail."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "QfamUlB-iU_M",
+        "cellView": "form"
+      },
+      "source": [
+        "#@markdown  Video 1:\n",
+        "from IPython.display import YouTubeVideo\n",
+        "YouTubeVideo('AjJLAcDb_MU')"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "cellView": "form",
+        "id": "6EF776jnjIMB"
+      },
+      "source": [
+        "#@markdown Video 2:\n",
+        "YouTubeVideo('VRAXK4QKJ1Q')"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "kROy_JNEiqpE"
+      },
+      "source": [
+        "Here's what the timbre components look like:\n",
+        "\n",
+        "![timbre basis components](https://drive.google.com/uc?id=1oRc5W4Rc_iwTZ3GpiIrWqswiPTpkfWkx)\n",
+        "\n",
+        "It's a little tricky to interpret what they represent, but you can think of them as showing different ways in which the strength of sounds at particular **frequencies** or pitches changes over time. The brighter the colour on the plot, the louder the sound, and the higher up that patch is on the plot, the higher the pitch of the sound that's loud.\n",
+        "\n",
+        "So for instance, if a high-pitched flute comes in really loudly part way through a track, you might have a higher value for one of the components that has a lot of loud high frequencies at that point in time. Like component 7 which has a band of bright yellow at the top.\n",
+        "\n",
+        "*In later (optional) sections of this notebook, we'll explore a few ways that we might generate some of our own timbre components.*"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "BvweLhpZHMG0",
+        "cellView": "form"
+      },
+      "source": [
+        "#@title Which component from the ones above might tell you whether there's a loud **low-pitched** instrument at a particular point in the track?\n",
+        "your_answer = '' #@param {type:\"string\"}\n",
+        "print(your_answer)"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "Yu1xYdMEH7a7"
+      },
+      "source": [
+        "Now, let's take a look at our timbre data, which is stored in a `pandas` dataframe called `data`. In the code cell below, **write a line that displays the first ten rows of the table**."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "QbRuWocRITHD"
+      },
+      "source": [
+        "### YOUR CODE HERE\n"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "IqgTtrFmI3Tv"
+      },
+      "source": [
+        "## Data Transformation\n",
+        "Do you see that there are a bunch of columns called `timbre_1`, `timbre_2` etc.? The entries you see in these columns are basically lists of numbers showing us **how strong** each timbre component is over the first minute or so of each song. A higher value for a particular component means that it's more strongly represented at that point in time.\n",
+        "\n",
+        "We can use these pieces of information to do some machine learning!"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "50x7zJ8kd3CF"
+      },
+      "source": [
+        "One thing that's not super obvious from looking at the table is that the lists of numbers are currently formatted as **strings**. This isn't ideal: we need to convert them into the right format. Let's build a function called `string_to_list()` that helps us do this, and test it out on a sample string to see if it works.\n",
+        "\n",
+        "A few hints:\n",
+        "1. There's a function called `.split()` which takes a character of your choice and stores the parts of the string separated by that character in a list.\n",
+        "2. We need to make sure that the numbers aren't themselves stored as strings, but rather as **floats**.\n",
+        "3. The square brackets are currently characters, and we don't want to include them when splitting up the string."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "jUBKZZ3seVGt"
+      },
+      "source": [
+        "def string_to_list(input_string):\n",
+        "    output_list = []\n",
+        "    #### YOUR CODE HERE ####\n",
+        "\n",
+        "\n",
+        "    #### END CODE ####\n",
+        "    return output_list\n",
+        "\n",
+        "# some tests to see if your code worked\n",
+        "test_input = '[5, 12.3, 3.3, 9.7]'\n",
+        "print(string_to_list(test_input))\n",
+        "print(type(string_to_list(test_input)))"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "XShwYyLULgB9"
+      },
+      "source": [
+        "Now, we're going to apply this to each timbre column of the dataset, so that we replace the string with lists. There are 12 components, labelled `timbre_1` to `timbre_12`, so we can use a `for` loop to help us out. The code below achieves what we're after, so go ahead and take a look and then **run this cell**."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "Mhb7vVojMEnO"
+      },
+      "source": [
+        "for i in range(1,13): # note we need to go from 1 to 13 since range leaves out the last number\n",
+        "    column = 'timbre_' + str(i)\n",
+        "    if type(data[column][0]) == str: # this means that if we rerun the cell accidentally it won't break!\n",
+        "        data[column] = data[column].apply(string_to_list)\n",
+        "\n",
+        "data.head()"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "BNw0d_9ONKJs"
+      },
+      "source": [
+        "The dataframe basically looks the same, but it actually contains lists instead of strings now.\n",
+        "\n",
+        "It might be cool to see what some timbre timecourses look like for a particular song. We can use the `plot_timbre` function which takes three parameters: the data, the song index, and the component number.\n",
+        "\n",
+        "The code below plots the timbre timecourse of component 3 for the song at index 0 in the dataset."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "pegvhgFxNlWJ"
+      },
+      "source": [
+        "plot_timbre(data, 0, 3)"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "Sey5BY6OlgOD"
+      },
+      "source": [
+        "Discussion: **How is the timbre component weight changing over time?**"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "2AmH1EhBQKEy"
+      },
+      "source": [
+        "Now **plot 5 different timbre components of your choosing** from a song of your choice (there are 1000 in this dataset, so you can choose between indices 0 and 999). Comment on what you see!"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "XQKc2qeWQJc7"
+      },
+      "source": [
+        "### YOUR CODE HERE"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "_YjcpXx5ONVq"
+      },
+      "source": [
+        "Next, we're going to explode the timbre components into their individual timesteps. This will help for our simple machine learning models which can only take **scalar** (single number) values for their features, not lists.\n",
+        "\n",
+        "This process will essentially make 120 new columns per timbre component, resulting in 1440 new columns/features. Our new columns will have titles in the format:\n",
+        "\n",
+        "> `timbre_{component_number}_{timestep_number}`\n",
+        "\n",
+        "where the `component_number` goes from 1 to 12 and the timestep number goes from 0 to 119.\n",
+        "\n",
+        "Note that we're not going to drop the old features, just in case we need them later on.\n",
+        "\n",
+        "Do this by running the code cell below:"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "JI5YbALcd1_0"
+      },
+      "source": [
+        "n_timbres = 12 # this is the number of timbre components\n",
+        "n_timesteps = 120 # this is the number of timesteps we're interested in\n",
+        "\n",
+        "for i in range(1, n_timbres+1):\n",
+        "    exploded_cols = []\n",
+        "    for t in range(n_timesteps):\n",
+        "        new_column_title = 'timbre_' + str(i) + '_' + str(t) # this gets us the column title we need\n",
+        "        exploded_cols.append(new_column_title)\n",
+        "    # now, let's generate the new columns\n",
+        "    data[exploded_cols] = pd.DataFrame(data['timbre_' + str(i)].to_list(), index=data.index)"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "2xXHk0vymvIg"
+      },
+      "source": [
+        "Now that we've done this, let's print out the data set again! **What's different?**"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "Fgcjskbsm1Bz"
+      },
+      "source": [
+        "data.head()"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "h3a7046ISQdM"
+      },
+      "source": [
+        "For some reason, a few songs did not have 120 timesteps. This means there are some values in our table that are **null** or non-existent. What we're going to do, then, is figure out how many songs don't have 120 timesteps and then drop them from our dataset.\n",
+        "\n",
+        "Write some code that generates a list of where those songs are and drops those rows from our dataframe.\n",
+        "\n",
+        "Hints:\n",
+        "1. You only need to use **one** timbre component to check which songs aren't long enough. So, for instance, you could just check the values in column `timbre_1_119`, which is the last timestep of timbre component 1.\n",
+        "2. The function `.isnull()` will help you generate a list of boolean values to tell you whether something is null (`True`) or not (`False`).\n",
+        "3. The function `np.where()` takes a list and returns a nested list telling you where the values are `True`. Note that because it returns a **nested list**, you will need to extract the element at index 0 of this output to get a regular list.\n",
+        "4. `data.drop(index=your_rows,inplace=True)` will remove the rows you identified as having null timesteps from your dataframe."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "LXl8Tb37TNHA"
+      },
+      "source": [
+        "### YOUR CODE HERE\n"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "epnqFvoxXhje"
+      },
+      "source": [
+        "data.shape"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "FAIycAWGVtNI",
+        "cellView": "form"
+      },
+      "source": [
+        "#@title Given that there were originally 1000 rows in your dataframe, how many were dropped? You may need to write a line of code to work this out.\n",
+        "your_answer =  0#@param {type:\"number\"}\n",
+        "if your_answer == 48:\n",
+        "    print('Correct! We dropped 48 rows')\n",
+        "else:\n",
+        "    print('Incorrect -- double check your code.')"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "I4piZiLPmaRY"
+      },
+      "source": [
+        "### optional code cell to use!\n"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "dqeetGluPxJN"
+      },
+      "source": [
+        "## Machine learning on timbre timecourses\n",
+        "\n",
+        "We've done a lot of good work up until this point to get our data ready for some machine learning! What we're going to do now is use the timbre component values at each timestep in our new columns to train five basic models to predict hits. Note that, as with notebook 1, we have a column called `Label` that tells us whether a song was a hit (1) or not (0).\n",
+        "\n",
+        "Let's try five basic models to see how well they predict hits:\n",
+        "1. Logistic regression\n",
+        "2. Support vector classifier\n",
+        "3. K-nearest neighbours\n",
+        "4. Gaussian Naive Bayes\n",
+        "5. Multi-layer perceptron (simple neural network)\n",
+        "\n",
+        "Your tasks are:\n",
+        "1. Get X (the 1440 features we made) and y (the label) from the dataframe.\n",
+        "2. Split up the dataset into train and test data, using a random state of 1 and 20% of data in testing.\n",
+        "3. Run the models above and get their scores on the test data.\n",
+        "4. Plot the scores in a bar graph."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "iliItjP9eoIr"
+      },
+      "source": [
+        "timbre_cols = [f'timbre_{i}_{j}' for i in range(1, n_timbres+1) for j in range(1, n_timesteps)]\n",
+        "\n",
+        "### TODO: Modify this code\n",
+        "X = None\n",
+        "y = None\n",
+        "\n",
+        "# TODO: add your train/test split code here\n",
+        "\n",
+        "\n",
+        "models = [LogisticRegression(max_iter=1000),\n",
+        "          SVC(),\n",
+        "          KNeighborsClassifier(),\n",
+        "          GaussianNB(),\n",
+        "          MLPClassifier(hidden_layer_sizes=(100,10))]\n",
+        "model_names = [type(model).__name__ for model in models]\n",
+        "\n",
+        "model_scores = []\n",
+        "\n",
+        "### TODO: Modify this code\n",
+        "for model in models:\n",
+        "    pass"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "3c7yVyVNmFwg",
+        "cellView": "form"
+      },
+      "source": [
+        "#@title How did these models do? Why do you think they performed this way?\n",
+        "your_answer = '' #@param {type:\"string\"}"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "A9QVzPcDrTsw"
+      },
+      "source": [
+        "Cool, we were able to train a couple of different models! If you want, move on to the next optional section to try a different type of model."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "QqapL3mHULCX"
+      },
+      "source": [
+        "## Optional Bonus: RNNs with LSTM cells\n",
+        "Since we're dealing with time-series data, it might be beneficial to use **RNNs** (recurrent neural networks). Even better, we can use **LSTM cells** which help with identifying long-term structure in the input. Here's what a regular RNN looks like:\n",
+        "\n",
+        "\n",
+        "![RNN](https://drive.google.com/uc?id=1cXbEHSfZXq0q_BuYU9SUGZmdDRR0Ox3e)\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "p6GQrYjlr7fd"
+      },
+      "source": [
+        "## Discussion\n",
+        "\n",
+        "*   If we're using RNNs on our song data, what are our inputs and outputs?\n",
+        "*   Why might using an RNN be useful to analyze our music data?\n",
+        "*   How does an RNN or LSTM help with identifying long-term structure in the input?\n",
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "hrkaz3xyZhPX"
+      },
+      "source": [
+        "In a recurrent network like this, our **outputs** ($o$) will be scalar/single number values that'll essentially be a prediction of whether a song is a hit or not.\n",
+        "\n",
+        "Let's think a bit more carefully about what our RNN **inputs** will be. You can see from the diagram above that we have a certain number of inputs, each marked $x^{(t)}$ where $t$ is a timestep. These $\\large{x}\\,$s are basically vectors of features.\n",
+        "\n",
+        "In our case, our features are the values of the timbre components. So ideally what we want is to get one vector of **12 timbres** for each timestep for each song. Right now, we have it the other way round: we have vectors of **120 timesteps** for each timbre component individually for each song.\n",
+        "\n",
+        "The code below swaps the dimensions of our original lists around so that they're vectors of timbres rather than vectors of timesteps, and stores it in a new matrix called `X_new`. The code below is a little involved and takes a few seconds to run, but your instructor will help you understand it!"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "ghj_8RN5W4Tx"
+      },
+      "source": [
+        "cols = ['timbre_' + str(i) for i in range(1, n_timbres+1)]\n",
+        "all_songs = []\n",
+        "for s in range(len(data)): # for every song in the dataframe\n",
+        "    song_timbre_vectors = []\n",
+        "    for t in range(n_timesteps): # for each timestep\n",
+        "        # let's now make a list of the timbre components for song s at timestep t\n",
+        "        time_t_timbres = [data[col].iloc[s][t] for col in cols]\n",
+        "        # now let's add it to our song_timbre_vectors_list\n",
+        "        song_timbre_vectors.append(time_t_timbres)\n",
+        "    # now let's add that song's timbre vectors to the all_songs list\n",
+        "    all_songs.append(song_timbre_vectors)\n",
+        "\n",
+        "# finally, convert this to a matrix.\n",
+        "X_new = np.array(all_songs)"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "x_cdVAZEetNI"
+      },
+      "source": [
+        "Let's now look at the dimensions of `X_new`."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "oE5n4sQpewn4"
+      },
+      "source": [
+        "print(X_new.shape)"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "J6ErWRiTYmad",
+        "cellView": "form"
+      },
+      "source": [
+        "#@title What do the dimensions represent?\n",
+        "dim1 = \"\" #@param {type:\"string\"}\n",
+        "dim2 = \"\" #@param {type:\"string\"}\n",
+        "dim3 = '' #@param {type:\"string\"}\n",
+        "\n",
+        "print(f'{X_new.shape[0]} is {dim1}')\n",
+        "print(f'{X_new.shape[1]} is {dim2}')\n",
+        "print(f'{X_new.shape[2]} is {dim3}')"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "Xxsh6Y-VdZjB"
+      },
+      "source": [
+        "Let's also ensure that we make `y_new` from y, as a numpy array with the length equivalent to the number of examples."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "p-lAe03qdY29"
+      },
+      "source": [
+        "y_new = np.array(y)\n",
+        "y_new.shape"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "oU3Gzzc_Zm3M"
+      },
+      "source": [
+        "Let's do one final import!"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "XpHvw_uxZk8N",
+        "cellView": "form"
+      },
+      "source": [
+        "#@title Final import!\n",
+        "from keras.preprocessing.sequence import TimeseriesGenerator\n",
+        "from keras.models import Sequential\n",
+        "from keras.layers import Dense\n",
+        "from keras.layers import LSTM\n",
+        "from keras.losses import BinaryCrossentropy"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "LVqlLJTDd8Rl"
+      },
+      "source": [
+        "Now let's build the LSTM model. There are a few things you'll need to do:\n",
+        "\n",
+        "1. Specify the number of timesteps, the size of the input and the size of the output.\n",
+        "2. Decide how big the immediate output of the LSTM should be.\n",
+        "3. Decide how many neurons you want in your dense (fully connected) layer after the LSTM layer.\n",
+        "4. Decide if you want to add more layers to your model!\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "yTaPCwhLaFGj"
+      },
+      "source": [
+        "# Build the model\n",
+        "## TODO: fill in the dimension sizes here\n",
+        "n_timesteps = None\n",
+        "n_input = None\n",
+        "n_output = None\n",
+        "\n",
+        "model = Sequential()\n",
+        "## TODO: Choose the number of neurons in the LSTM output.\n",
+        "model.add(LSTM(None, input_shape=(n_timesteps,n_input)))\n",
+        "## TODO: Choose the number of units in your dense hidden layer\n",
+        "model.add(Dense(None))\n",
+        "# Do you want more layers? Add them here!\n",
+        "\n",
+        "# Leave this one in\n",
+        "model.add(Dense(n_output))\n",
+        "model.summary()"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "EBIQdgyIeOZa"
+      },
+      "source": [
+        "Finally, let's train it!"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "qTLFWHWzannW"
+      },
+      "source": [
+        "# new train-test split\n",
+        "X_new_train, X_new_test, y_new_train, y_new_test = train_test_split(X_new, y_new, test_size=.2, random_state=1)\n",
+        "\n",
+        "model.compile(\n",
+        "    loss=BinaryCrossentropy(from_logits=True),\n",
+        "    optimizer=\"adam\",\n",
+        "    metrics=[\"accuracy\"],\n",
+        ")\n",
+        "\n",
+        "model.fit(\n",
+        "    X_new_train, y_new_train, validation_data=(X_new_test, y_new_test), batch_size=50, epochs=30\n",
+        ")"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "hu9WQ78Mg3-8"
+      },
+      "source": [
+        "**Question**: how did this model do compared to the others? What benefits and drawbacks are there to the LSTM model?"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "yVtZV9hbehh-",
+        "cellView": "form"
+      },
+      "source": [
+        "#@title **Question**: how did this model do compared to the others? What benefits and drawbacks are there to the LSTM model?\n",
+        "your_answer = '' #@param {type:\"string\"}\n",
+        "print(your_answer)"
+      ],
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "uAD1XOU9jpIE"
+      },
+      "source": [
+        "## Congrats on building your models!\n",
+        "Well done for getting through the notebook so far! This isn't an easy one and you've learned a lot already.\n",
+        "\n",
+        "In the optional next notebook, you'll have the chance to take a look at more music analysis using spectrograms and principal components analysis. This stuff is pretty challenging, so if you have time go ahead and give it a try!"
+      ]
+    }
+  ]
+}
